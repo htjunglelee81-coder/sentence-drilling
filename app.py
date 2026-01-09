@@ -4,19 +4,31 @@ from gtts import gTTS
 import io
 import re
 from difflib import SequenceMatcher
-from streamlit_mic_recorder import mic_recorder
+from streamlit_components_auth import st_auth # 대체 수단 혹은 자바스크립트 활용
 
 # 페이지 설정
 st.set_page_config(page_title="최강 문장 학습 도구", layout="wide")
 
-# 스타일 설정 (빨간 글씨 및 버튼 위치 조정)
-st.markdown("""
-    <style>
-    .stTextInput { margin-top: -15px; }
-    .error-text { color: red; font-weight: bold; margin-top: 5px; }
-    .stButton button { width: 100%; border-radius: 20px; }
-    </style>
-    """, unsafe_allow_html=True)
+# 자바스크립트를 이용한 브라우저 음성 인식 구현 (속도 최상)
+def stt_script(idx):
+    return f"""
+    <script>
+    var recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = function(event) {{
+        var transcript = event.results[0][0].transcript;
+        const input = window.parent.document.querySelectorAll('input')[{idx}];
+        input.value = transcript;
+        input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+        input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+    }};
+    
+    recognition.start();
+    </script>
+    """
 
 def get_similarity(a, b):
     a_clean = re.sub(r'[^\w\s]', '', a.lower()).strip()
@@ -25,7 +37,7 @@ def get_similarity(a, b):
 
 # 세션 상태 초기화
 if 'show_en' not in st.session_state: st.session_state.show_en = {}
-if 'input_option' not in st.session_state: st.session_state.input_option = {} # 'mic', 'write' 혹은 None
+if 'input_option' not in st.session_state: st.session_state.input_option = {}
 
 st.title("🚀 최강 문장 학습 도구")
 
@@ -37,12 +49,9 @@ sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', raw_text.strip()) if 
 if sentences:
     translator = GoogleTranslator(source='en', target='ko')
     
-    # 전체 제어
     if st.button("👁️ 영어 전체 보이기/숨기기"):
         curr = all(st.session_state.show_en.get(i, True) for i in range(len(sentences)))
-        for i in range(len(sentences)): 
-            st.session_state.show_en[i] = not curr
-            if not st.session_state.show_en[i]: st.session_state.input_option[i] = None
+        for i in range(len(sentences)): st.session_state.show_en[i] = not curr
         st.rerun()
 
     st.write("---")
@@ -51,61 +60,52 @@ if sentences:
         if idx not in st.session_state.show_en: st.session_state.show_en[idx] = True
         if idx not in st.session_state.input_option: st.session_state.input_option[idx] = None
 
-        r1, r2, r3, r4 = st.columns([0.5, 4.5, 3.5, 1.5])
-        
+        r1, r2, r3, r4 = st.columns([0.5, 5, 3, 1.5])
         r1.write(f"**{idx + 1}**")
 
-        # 1. 영어 문장 칸 (가장 중요)
         with r2:
-            inner_col1, inner_col2 = st.columns([9, 1])
+            inner_col1, inner_col2 = st.columns([11, 1])
             
-            # 문장 표시 혹은 빈칸
             with inner_col1:
                 if st.session_state.show_en[idx]:
                     st.success(sentence)
                 else:
-                    st.info("🙈 문장이 숨겨졌습니다. 아래에서 입력 방식을 선택하세요.")
+                    st.info("🙈 문장이 숨겨졌습니다.")
                     
-                    # 마이크 vs 쓰기 선택 아이콘
-                    opt_col1, opt_col2, _ = st.columns([1, 1, 5])
-                    if opt_col1.button("🎤", key=f"mic_opt_{idx}"):
-                        st.session_state.input_option[idx] = 'mic'
-                        st.rerun()
-                    if opt_col2.button("✍️", key=f"write_opt_{idx}"):
-                        st.session_state.input_option[idx] = 'write'
-                        st.rerun()
+                    # 마이크 및 쓰기 선택 버튼 (나란히 배치)
+                    opt_col1, opt_col2, _ = st.columns([0.5, 0.5, 5])
+                    mic_clicked = opt_col1.button("🎤", key=f"m_btn_{idx}")
+                    write_clicked = opt_col2.button("✍️", key=f"w_btn_{idx}")
 
-                    # 선택된 입력 방식 표시
-                    if st.session_state.input_option[idx] == 'write':
-                        u_input = st.text_input("타이핑하세요:", key=f"text_in_{idx}")
+                    if mic_clicked: st.session_state.input_option[idx] = 'mic'
+                    if write_clicked: st.session_state.input_option[idx] = 'write'
+
+                    # 입력창 제공
+                    if st.session_state.input_option[idx]:
+                        u_input = st.text_input("정답을 입력하세요 (엔터):", key=f"text_{idx}")
+                        
+                        if st.session_state.input_option[idx] == 'mic' and mic_clicked:
+                            st.components.v1.html(stt_script(idx), height=0)
+                            st.warning("🎤 지금 말씀하세요! (인식 후 입력창에 자동 입력됩니다)")
+
                         if u_input:
-                            if get_similarity(u_input, sentence) >= 0.9:
+                            score = get_similarity(u_input, sentence)
+                            if score >= 0.9:
                                 st.session_state.show_en[idx] = True
                                 st.balloons(); st.rerun()
                             else:
-                                st.markdown(f"<p class='error-text'>{u_input} (오답)</p>", unsafe_allow_html=True)
-                    
-                    elif st.session_state.input_option[idx] == 'mic':
-                        audio = mic_recorder(start_prompt="Speak Now", stop_prompt="Stop", key=f"recorder_{idx}")
-                        # 실제 음성->텍스트 변환은 브라우저 API 호출이 필요하므로 
-                        # 여기서는 구조적 위치와 작동 방식만 완벽히 구현했습니다.
+                                st.markdown(f"<p style='color:red; font-weight:bold;'>{u_input} (오답 - {int(score*100)}% 일치)</p>", unsafe_allow_html=True)
 
-            # 눈알 버튼 (가장 오른쪽 끝)
-            with inner_col2:
+            with inner_col2: # 눈알 버튼을 원문 칸의 제일 오른쪽 끝에 배치
                 if st.button("👁️", key=f"eye_{idx}"):
                     st.session_state.show_en[idx] = not st.session_state.show_en[idx]
-                    if not st.session_state.show_en[idx]: st.session_state.input_option[idx] = None
+                    st.session_state.input_option[idx] = None
                     st.rerun()
 
-        # 2. 해석 칸
-        with r3:
+        with r3: # 해석 칸
             st.write(translator.translate(sentence))
 
-        # 3. 소리 버튼
-        with r4:
-            if st.button("▶️ 재생", key=f"play_{idx}"):
+        with r4: # 재생 버튼
+            if st.button("▶️", key=f"p_{idx}"):
                 tts = gTTS(text=sentence, lang='en')
-                fp = io.BytesIO(); tts.write_to_fp(fp)
-                st.audio(fp, format='audio/mp3', autoplay=True)
-else:
-    st.info("지문을 입력해주세요.")
+                fp = io.BytesIO(); tts.write_to_fp(fp); st.audio(fp, format='audio/mp3', autoplay=True)
