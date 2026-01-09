@@ -4,32 +4,40 @@ from gtts import gTTS
 import io
 import re
 from difflib import SequenceMatcher
-import streamlit.components.v1 as components
+from streamlit_speech_recorder import speech_recorder
 
 st.set_page_config(page_title="최강 문장 학습 도구", layout="wide")
 
+# CSS: 오답 표시 및 레이아웃
+st.markdown("""
+    <style>
+    .error-msg { color: red; font-weight: bold; background-color: #fff5f5; padding: 8px; border-radius: 5px; border: 1px solid red; margin-top: 5px; }
+    /* 녹음 버튼 커스텀 스타일링은 라이브러리 특성상 제한적이나 최대한 깔끔하게 배치 */
+    </style>
+    """, unsafe_allow_html=True)
+
 def get_similarity(a, b):
+    if not a: return 0
     a_clean = re.sub(r'[^\w\s]', '', a.lower()).strip()
     b_clean = re.sub(r'[^\w\s]', '', b.lower()).strip()
     return SequenceMatcher(None, a_clean, b_clean).ratio()
 
 if 'show_en' not in st.session_state: st.session_state.show_en = {}
-if 'input_option' not in st.session_state: st.session_state.input_option = {}
+if 'input_mode' not in st.session_state: st.session_state.input_mode = {}
 
-st.title("🚀 Smart English Learning Table")
+st.title("🚀 Smart English Sentence Driller")
 
-with st.expander("📖 전체 영문 입력", expanded=True):
+with st.expander("📖 영어 지문 입력", expanded=True):
     raw_text = st.text_area("영어 지문을 입력하세요:", height=150)
 
 sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', raw_text.strip()) if s.strip()]
 
 if sentences:
     translator = GoogleTranslator(source='en', target='ko')
-    st.write("---")
-
+    
     for idx, sentence in enumerate(sentences):
         if idx not in st.session_state.show_en: st.session_state.show_en[idx] = True
-        if idx not in st.session_state.input_option: st.session_state.input_option[idx] = None
+        if idx not in st.session_state.input_mode: st.session_state.input_mode[idx] = None
 
         col_no, col_main, col_ko, col_play = st.columns([0.5, 5, 3, 1.5])
         col_no.write(f"**{idx + 1}**")
@@ -41,51 +49,37 @@ if sentences:
                     st.success(sentence)
                 else:
                     st.info("🙈 문장이 숨겨졌습니다.")
-                    i1, i2, _ = st.columns([1, 1, 6])
+                    i1, i2, _ = st.columns([1.5, 1, 6])
                     
-                    if i1.button("🎤", key=f"mic_btn_{idx}"):
-                        st.session_state.input_option[idx] = 'mic'
-                        # 개선된 스크립트: 직접 Element를 찾아 값을 넣고 이벤트를 발생시킴
-                        components.html(f"""
-                            <script>
-                            var recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-                            recognition.lang = 'en-US';
-                            recognition.start();
-                            recognition.onresult = function(event) {{
-                                var transcript = event.results[0][0].transcript;
-                                // 모든 입력창을 뒤져서 현재 번호에 맞는 창에 강제 입력
-                                var inputs = window.parent.document.querySelectorAll('input');
-                                for (var i = 0; i < inputs.length; i++) {{
-                                    if (inputs[i].id.includes('user_in_{idx}')) {{
-                                        inputs[i].value = transcript;
-                                        inputs[i].dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                        inputs[i].dispatchEvent(new Event('change', {{ bubbles: true }}));
-                                        break;
-                                    }}
-                                }}
-                            }};
-                            </script>
-                        """, height=0)
+                    with i1:
+                        # 마이크 아이콘 클릭 시 즉시 녹음/변환 (영어 설정)
+                        st.write("🎤")
+                        recorded_text = speech_recorder(text="", key=f"speech_{idx}", language="en-US")
+                    
+                    with i2:
+                        if st.button("✍️", key=f"w_btn_{idx}"):
+                            st.session_state.input_mode[idx] = 'write'
+                    
+                    # 입력 처리 로직
+                    final_input = ""
+                    if recorded_text:
+                        final_input = recorded_text
+                    elif st.session_state.input_mode[idx] == 'write':
+                        final_input = st.text_input("타이핑 후 엔터:", key=f"t_in_{idx}")
 
-                    if i2.button("✍️", key=f"write_btn_{idx}"):
-                        st.session_state.input_option[idx] = 'write'
-
-                    if st.session_state.input_option[idx]:
-                        # 입력창 생성
-                        u_in = st.text_input("정답 입력 (엔터):", key=f"user_in_{idx}", placeholder="말씀하시거나 입력하세요")
-                        
-                        if u_in:
-                            score = get_similarity(u_in, sentence)
-                            if score >= 0.9:
-                                st.session_state.show_en[idx] = True
-                                st.balloons(); st.rerun()
-                            else:
-                                st.error(f"❌ {u_in} (불일치)")
+                    if final_input:
+                        score = get_similarity(final_input, sentence)
+                        if score >= 0.9:
+                            st.session_state.show_en[idx] = True
+                            st.balloons()
+                            st.rerun()
+                        else:
+                            st.markdown(f"<div class='error-msg'>❌ {final_input} (일치율: {int(score*100)}%)</div>", unsafe_allow_html=True)
 
             with c_eye:
                 if st.button("👁️", key=f"eye_{idx}"):
                     st.session_state.show_en[idx] = not st.session_state.show_en[idx]
-                    st.session_state.input_option[idx] = None
+                    st.session_state.input_mode[idx] = None
                     st.rerun()
 
         with col_ko: st.write(translator.translate(sentence))
