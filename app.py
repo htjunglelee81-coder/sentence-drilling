@@ -5,7 +5,7 @@ import io
 import re
 
 # 페이지 설정
-st.set_page_config(page_title="영문 학습 도우미", layout="wide")
+st.set_page_config(page_title="최강 문장 학습 도구", layout="wide")
 
 if 'show_en' not in st.session_state: st.session_state.show_en = {}
 if 'show_ko' not in st.session_state: st.session_state.show_ko = {}
@@ -86,4 +86,5 @@ if sentences:
                 tts.write_to_fp(fp)
                 st.audio(fp, format='audio/mp3', autoplay=True)
 else:
+
     st.info("위 빈칸에 영어 지문을 입력하면 학습 테이블이 생성됩니다.")
