@@ -6,7 +6,7 @@ import re
 from difflib import SequenceMatcher
 import streamlit.components.v1 as components
 
-st.set_page_config(page_title="영문 학습 도구", layout="wide")
+st.set_page_config(page_title="최강 문장 학습 도구", layout="wide")
 
 def get_similarity(a, b):
     a_clean = re.sub(r'[^\w\s]', '', a.lower()).strip()
@@ -43,9 +43,9 @@ if sentences:
                     st.info("🙈 문장이 숨겨졌습니다.")
                     i1, i2, _ = st.columns([1, 1, 6])
                     
-                    # 🎤 고성능 영어 인식 스크립트 실행
                     if i1.button("🎤", key=f"mic_btn_{idx}"):
                         st.session_state.input_option[idx] = 'mic'
+                        # 개선된 스크립트: 직접 Element를 찾아 값을 넣고 이벤트를 발생시킴
                         components.html(f"""
                             <script>
                             var recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
@@ -53,12 +53,13 @@ if sentences:
                             recognition.start();
                             recognition.onresult = function(event) {{
                                 var transcript = event.results[0][0].transcript;
-                                // 부모 창의 모든 입력창 중 현재 인덱스에 맞는 창을 찾아 값 주입
+                                // 모든 입력창을 뒤져서 현재 번호에 맞는 창에 강제 입력
                                 var inputs = window.parent.document.querySelectorAll('input');
                                 for (var i = 0; i < inputs.length; i++) {{
                                     if (inputs[i].id.includes('user_in_{idx}')) {{
                                         inputs[i].value = transcript;
                                         inputs[i].dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                        inputs[i].dispatchEvent(new Event('change', {{ bubbles: true }}));
                                         break;
                                     }}
                                 }}
@@ -70,6 +71,7 @@ if sentences:
                         st.session_state.input_option[idx] = 'write'
 
                     if st.session_state.input_option[idx]:
+                        # 입력창 생성
                         u_in = st.text_input("정답 입력 (엔터):", key=f"user_in_{idx}", placeholder="말씀하시거나 입력하세요")
                         
                         if u_in:
@@ -78,7 +80,7 @@ if sentences:
                                 st.session_state.show_en[idx] = True
                                 st.balloons(); st.rerun()
                             else:
-                                st.error(f"❌ {u_in} (다시 시도하세요!)")
+                                st.error(f"❌ {u_in} (불일치)")
 
             with c_eye:
                 if st.button("👁️", key=f"eye_{idx}"):
@@ -88,6 +90,6 @@ if sentences:
 
         with col_ko: st.write(translator.translate(sentence))
         with col_play:
-            if st.button("▶️ 재생", key=f"p_{idx}"):
+            if st.button("▶️", key=f"p_{idx}"):
                 tts = gTTS(text=sentence, lang='en')
                 fp = io.BytesIO(); tts.write_to_fp(fp); st.audio(fp, format='audio/mp3', autoplay=True)
