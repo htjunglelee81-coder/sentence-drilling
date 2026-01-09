@@ -7,32 +7,30 @@ from difflib import SequenceMatcher
 import streamlit.components.v1 as components
 
 # 1. 페이지 설정
-st.set_page_config(page_title="최강 문장 학습 도구", layout="wide")
+st.set_page_config(page_title="영문 학습 도구", layout="wide")
 
-# 2. 디자인 설정: 입력창 내부에 마이크 아이콘 배치
+# 2. CSS: 입력창 내부 우측 끝에 마이크 아이콘 배치
 st.markdown("""
     <style>
-    .input-container {
+    .input-wrapper {
         position: relative;
         width: 100%;
-        margin-bottom: 10px;
+        margin-top: 10px;
     }
-    .custom-input {
-        width: 100%;
-        padding: 10px 40px 10px 10px;
-        border: 1px solid #ccc;
-        border-radius: 5px;
-        font-size: 16px;
+    /* 실제 텍스트가 입력되는 칸 */
+    .stTextInput input {
+        padding-right: 45px !important;
     }
-    .mic-icon {
+    /* 마이크 버튼 위치 잡기 */
+    .mic-overlay {
         position: absolute;
         right: 10px;
-        top: 50%;
-        transform: translateY(-50%);
+        top: 38px; /* 입력창 높이에 맞춰 조정됨 */
+        z-index: 100;
         cursor: pointer;
+        font-size: 20px;
         background: none;
         border: none;
-        font-size: 20px;
     }
     .error-msg { color: red; font-weight: bold; background-color: #fff5f5; padding: 10px; border: 1px solid red; border-radius: 5px; margin-top: 5px; }
     </style>
@@ -48,7 +46,6 @@ if 'show_en' not in st.session_state: st.session_state.show_en = {}
 
 st.title("🚀 Smart English Learning Table")
 
-# 3. 지문 입력 영역
 with st.expander("📖 영어 지문 입력", expanded=True):
     raw_text = st.text_area("영어 지문을 입력하세요:", height=150)
 
@@ -57,18 +54,18 @@ sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', raw_text.strip()) if 
 if sentences:
     translator = GoogleTranslator(source='en', target='ko')
     
-    # 상단 전체 제어 버튼
-    col_t1, col_t2, _ = st.columns([2, 2, 6])
-    with col_t1:
+    # 상단 버튼들
+    c1, c2, _ = st.columns([2, 2, 6])
+    with c1:
         if st.button("👁️ 전체 보이기/숨기기"):
             all_s = all(st.session_state.show_en.get(i, True) for i in range(len(sentences)))
             for i in range(len(sentences)): st.session_state.show_en[i] = not all_s
             st.rerun()
-    with col_t2:
+    with c2:
         if st.button("🔊 전체 듣기"):
             tts = gTTS(text=" ".join(sentences), lang='en')
             fp = io.BytesIO(); tts.write_to_fp(fp); st.audio(fp, format='audio/mp3', autoplay=True)
-    
+
     st.write("---")
 
     for idx, sentence in enumerate(sentences):
@@ -85,12 +82,14 @@ if sentences:
                 else:
                     st.info("🙈 문장이 숨겨졌습니다.")
                     
-                    # [핵심] 입력창과 마이크 아이콘 통합 UI (HTML/JS)
-                    # 별도의 Streamlit 위젯 대신 직접 HTML로 입력창을 렌더링하여 타이핑과 마이크 기능을 하나로 합침
-                    u_in = st.text_input("정답 입력 (엔터):", key=f"input_{idx}", placeholder="영어를 입력하거나 오른쪽 마이크를 누르세요")
+                    # 마이크를 입력창 안에 넣기 위한 컨테이너
+                    st.markdown(f'<div class="input-wrapper">', unsafe_allow_html=True)
                     
-                    # 마이크 버튼만 따로 작게 배치하여 입력창 바로 옆/끝에 위치시킴
-                    if st.button(f"🎤", key=f"mic_btn_{idx}", help="클릭하고 영어로 말씀하세요"):
+                    # 1. 입력창 (항상 노출, 타이핑 가능)
+                    u_in = st.text_input("정답 입력 (엔터):", key=f"field_{idx}", placeholder="영어를 입력하세요")
+                    
+                    # 2. 입력창 우측 끝에 겹쳐질 마이크 버튼
+                    if st.button("🎤", key=f"mic_icon_{idx}"):
                         components.html(f"""
                             <script>
                             var recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
@@ -98,21 +97,15 @@ if sentences:
                             recognition.start();
                             recognition.onresult = function(event) {{
                                 var text = event.results[0][0].transcript;
-                                // Streamlit의 입력창(input)을 찾아 값을 넣음
-                                var inputs = window.parent.document.querySelectorAll('input');
-                                for(var i=0; i<inputs.length; i++) {{
-                                    if(inputs[i].getAttribute('aria-label') === null && inputs[i].type === 'text') {{
-                                         // 현재 순서에 맞는 입력을 찾기 위해 key 매칭 (Streamlit 내부 구조 활용)
-                                         if(inputs[i].id.includes('input_{idx}')) {{
-                                             inputs[i].value = text;
-                                             inputs[i].dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                             break;
-                                         }}
-                                    }}
+                                var input = window.parent.document.querySelector('input[id*="field_{idx}"]');
+                                if(input) {{
+                                    input.value = text;
+                                    input.dispatchEvent(new Event('input', {{ bubbles: true }}));
                                 }}
                             }};
                             </script>
                         """, height=0)
+                    st.markdown('</div>', unsafe_allow_html=True)
                     
                     if u_in:
                         if get_similarity(u_in, sentence) >= 0.9:
