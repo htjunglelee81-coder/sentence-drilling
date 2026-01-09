@@ -4,28 +4,25 @@ from gtts import gTTS
 import io
 import re
 from difflib import SequenceMatcher
-from streamlit_speech_recorder import speech_recorder
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title="최강 문장 학습 도구", layout="wide")
 
-# CSS: 오답 표시 및 레이아웃
+# CSS: 디자인 유지 및 오답 스타일
 st.markdown("""
     <style>
-    .error-msg { color: red; font-weight: bold; background-color: #fff5f5; padding: 8px; border-radius: 5px; border: 1px solid red; margin-top: 5px; }
-    /* 녹음 버튼 커스텀 스타일링은 라이브러리 특성상 제한적이나 최대한 깔끔하게 배치 */
+    .error-msg { color: red; font-weight: bold; background-color: #fff5f5; padding: 10px; border: 1px solid red; border-radius: 5px; margin-top: 5px; }
     </style>
     """, unsafe_allow_html=True)
 
 def get_similarity(a, b):
-    if not a: return 0
     a_clean = re.sub(r'[^\w\s]', '', a.lower()).strip()
     b_clean = re.sub(r'[^\w\s]', '', b.lower()).strip()
     return SequenceMatcher(None, a_clean, b_clean).ratio()
 
 if 'show_en' not in st.session_state: st.session_state.show_en = {}
-if 'input_mode' not in st.session_state: st.session_state.input_mode = {}
 
-st.title("🚀 Smart English Sentence Driller")
+st.title("🚀 Smart English Learning Table")
 
 with st.expander("📖 영어 지문 입력", expanded=True):
     raw_text = st.text_area("영어 지문을 입력하세요:", height=150)
@@ -37,7 +34,6 @@ if sentences:
     
     for idx, sentence in enumerate(sentences):
         if idx not in st.session_state.show_en: st.session_state.show_en[idx] = True
-        if idx not in st.session_state.input_mode: st.session_state.input_mode[idx] = None
 
         col_no, col_main, col_ko, col_play = st.columns([0.5, 5, 3, 1.5])
         col_no.write(f"**{idx + 1}**")
@@ -49,37 +45,39 @@ if sentences:
                     st.success(sentence)
                 else:
                     st.info("🙈 문장이 숨겨졌습니다.")
-                    i1, i2, _ = st.columns([1.5, 1, 6])
                     
-                    with i1:
-                        # 마이크 아이콘 클릭 시 즉시 녹음/변환 (영어 설정)
-                        st.write("🎤")
-                        recorded_text = speech_recorder(text="", key=f"speech_{idx}", language="en-US")
+                    # 🎤 마이크 버튼과 입력창
+                    m_col, i_col = st.columns([1, 9])
+                    with m_col:
+                        # 마이크 클릭 시 브라우저 내장 인식 기능 실행
+                        if st.button("🎤", key=f"mic_{idx}"):
+                            components.html(f"""
+                                <script>
+                                var recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+                                recognition.lang = 'en-US';
+                                recognition.start();
+                                recognition.onresult = function(event) {{
+                                    var text = event.results[0][0].transcript;
+                                    var input = window.parent.document.querySelectorAll('input')[{idx}];
+                                    input.value = text;
+                                    input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                }};
+                                </script>
+                            """, height=0)
                     
-                    with i2:
-                        if st.button("✍️", key=f"w_btn_{idx}"):
-                            st.session_state.input_mode[idx] = 'write'
+                    with i_col:
+                        u_in = st.text_input("정답 입력:", key=f"in_{idx}", label_visibility="collapsed", placeholder="말씀하시거나 입력하세요")
                     
-                    # 입력 처리 로직
-                    final_input = ""
-                    if recorded_text:
-                        final_input = recorded_text
-                    elif st.session_state.input_mode[idx] == 'write':
-                        final_input = st.text_input("타이핑 후 엔터:", key=f"t_in_{idx}")
-
-                    if final_input:
-                        score = get_similarity(final_input, sentence)
-                        if score >= 0.9:
+                    if u_in:
+                        if get_similarity(u_in, sentence) >= 0.9:
                             st.session_state.show_en[idx] = True
-                            st.balloons()
-                            st.rerun()
+                            st.balloons(); st.rerun()
                         else:
-                            st.markdown(f"<div class='error-msg'>❌ {final_input} (일치율: {int(score*100)}%)</div>", unsafe_allow_html=True)
+                            st.markdown(f"<div class='error-msg'>❌ {u_in} (일치하지 않음)</div>", unsafe_allow_html=True)
 
             with c_eye:
                 if st.button("👁️", key=f"eye_{idx}"):
                     st.session_state.show_en[idx] = not st.session_state.show_en[idx]
-                    st.session_state.input_mode[idx] = None
                     st.rerun()
 
         with col_ko: st.write(translator.translate(sentence))
