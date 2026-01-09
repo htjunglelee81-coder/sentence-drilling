@@ -3,17 +3,18 @@ from deep_translator import GoogleTranslator
 from gtts import gTTS
 import io
 import re
+import time
 from difflib import SequenceMatcher
 import streamlit.components.v1 as components
 
 st.set_page_config(page_title="최강 문장 학습 도구", layout="wide")
 
-# CSS: 오답 스타일 및 자동완성 방지
+# CSS: 오답 스타일 및 정답 유출 방지
 st.markdown("""
     <style>
-    .error-text { color: red; font-weight: bold; padding: 10px; background-color: #fff5f5; border: 1px solid red; border-radius: 5px; margin-top: 5px; }
-    /* 브라우저 자동완성 목록 숨기기 가이드 */
-    input { autocomplete: off !important; }
+    .error-text { color: #D32F2F; font-weight: bold; padding: 10px; background-color: #FFEBEE; border: 1px solid #D32F2F; border-radius: 5px; margin-top: 5px; }
+    /* 자동완성 목록 강제 숨기기 */
+    input { -webkit-text-security: none; autocomplete: off !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -24,6 +25,8 @@ def get_similarity(a, b):
 
 if 'show_en' not in st.session_state: st.session_state.show_en = {}
 if 'input_option' not in st.session_state: st.session_state.input_option = {}
+# 자동완성 방지용 무작위 키 생성
+if 'seed' not in st.session_state: st.session_state.seed = time.time()
 
 st.title("🚀 최강 문장 학습 도구")
 
@@ -51,19 +54,19 @@ if sentences:
                     st.info("🙈 문장이 숨겨졌습니다.")
                     i1, i2, _ = st.columns([1, 1, 6])
                     
-                    # 🎤 마이크 클릭 시 실행될 고성능 STT 스크립트 (영어 고정)
                     if i1.button("🎤", key=f"m_btn_{idx}"):
                         st.session_state.input_option[idx] = 'mic'
+                        # 영어 전용 고성능 STT 엔진 호출
                         components.html(f"""
                             <script>
                             var recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-                            recognition.lang = 'en-US';  // 영어로 고정
+                            recognition.lang = 'en-US';
                             recognition.start();
                             recognition.onresult = function(event) {{
                                 var text = event.results[0][0].transcript;
                                 var inputs = window.parent.document.querySelectorAll('input');
                                 for(var i=0; i<inputs.length; i++) {{
-                                    if(inputs[i].getAttribute('aria-label') == 'answer_input_{idx}') {{
+                                    if(inputs[i].id.indexOf('user_in_{idx}') !== -1) {{
                                         inputs[i].value = text;
                                         inputs[i].dispatchEvent(new Event('input', {{ bubbles: true }}));
                                         break;
@@ -77,23 +80,25 @@ if sentences:
                         st.session_state.input_option[idx] = 'write'
 
                     if st.session_state.input_option[idx]:
-                        # label을 사용하여 내부적으로만 식별하고 화면에는 숨김 (정답 노출 방지)
+                        # key에 seed를 섞어서 브라우저가 자동완성을 못하게 방해함
                         u_in = st.text_input(
                             "정답 입력:", 
-                            key=f"user_in_{idx}", 
+                            key=f"user_in_{idx}_{st.session_state.seed}", 
                             label_visibility="collapsed",
                             placeholder="영어로 입력하거나 마이크를 클릭하세요",
-                            autocomplete="new-password", # 자동완성 방지용 편법
-                            aria_label=f"answer_input_{idx}"
+                            autocomplete="new-password" 
                         )
                         
                         if u_in:
                             score = get_similarity(u_in, sentence)
                             if score >= 0.9:
                                 st.session_state.show_en[idx] = True
-                                st.balloons(); st.rerun()
+                                st.balloons()
+                                # 정답을 맞추면 시드를 갱신하여 다음 기록 삭제
+                                st.session_state.seed = time.time()
+                                st.rerun()
                             else:
-                                st.markdown(f"<div class='error-text'>❌ {u_in} (불일치)</div>", unsafe_allow_html=True)
+                                st.markdown(f"<div class='error-text'>❌ {u_in} (다시 시도해 보세요!)</div>", unsafe_allow_html=True)
 
             with c_eye:
                 if st.button("👁️", key=f"eye_{idx}"):
