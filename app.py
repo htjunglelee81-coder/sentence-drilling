@@ -4,18 +4,27 @@ from gtts import gTTS
 import io
 import re
 from difflib import SequenceMatcher
-import streamlit.components.v1 as components
 
 # 페이지 설정
 st.set_page_config(page_title="최강 문장 학습 도구", layout="wide")
 
-# CSS: 정답 노출 방지 및 스타일링
+# CSS: 정답 노출 방지 및 UI 고정
 st.markdown("""
     <style>
-    /* 입력창 툴팁 방지 */
-    input[title] { display: none !important; }
-    .error-box { color: #FF4B4B; font-weight: bold; background-color: #FFF5F5; padding: 10px; border-radius: 5px; margin-top: 5px; border: 1px solid #FF4B4B; }
-    .stTextInput input { -webkit-text-security: none; }
+    .error-box { 
+        color: #FF4B4B; 
+        font-weight: bold; 
+        background-color: #FFF5F5; 
+        padding: 8px; 
+        border-radius: 5px; 
+        margin-top: 5px; 
+        border: 1px solid #FF4B4B; 
+        font-size: 0.9em;
+    }
+    /* 자동 완성 및 툴팁 방지 */
+    div[data-baseweb="input"] input {
+        text-overflow: clip !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -38,6 +47,7 @@ sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', raw_text.strip()) if 
 if sentences:
     translator = GoogleTranslator(source='en', target='ko')
     
+    # 전체 제어
     if st.button("👁️ 영어 전체 보이기/숨기기"):
         curr = all(st.session_state.show_en.get(i, True) for i in range(len(sentences)))
         for i in range(len(sentences)): 
@@ -62,39 +72,35 @@ if sentences:
                 else:
                     st.info("🙈 문장이 숨겨졌습니다.")
                     i1, i2, _ = st.columns([1, 1, 6])
+                    
+                    # 🎤 마이크 아이콘 클릭 시: 입력창만 열어주고 안내 문구 표시
                     if i1.button("🎤", key=f"m_btn_{idx}"):
                         st.session_state.input_option[idx] = 'mic'
+                    # ✍️ 쓰기 아이콘 클릭 시: 일반 입력창 표시
                     if i2.button("✍️", key=f"w_btn_{idx}"):
                         st.session_state.input_option[idx] = 'write'
 
-                    # 입력 로직
                     if st.session_state.input_option[idx]:
-                        # 브라우저 음성인식 자바스크립트 (마이크 클릭 시 실행)
-                        if st.session_state.input_option[idx] == 'mic':
-                            st.warning("🎤 마이크가 켜졌습니다. 영어로 말씀하세요!")
-                            components.html(f"""
-                                <script>
-                                var recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-                                recognition.lang = 'en-US';
-                                recognition.onresult = function(event) {{
-                                    var result = event.results[0][0].transcript;
-                                    parent.document.querySelectorAll('input')[{idx}].value = result;
-                                    parent.document.querySelectorAll('input')[{idx}].focus();
-                                }};
-                                recognition.start();
-                                </script>
-                                """, height=0)
-
-                        # 입력창 (정답 툴팁 제거 완료)
-                        u_in = st.text_input("정답 입력 후 엔터:", key=f"user_in_{idx}", help=None, placeholder="정답을 써주세요")
+                        placeholder_text = "영어로 말씀하세요 (마이크 아이콘 클릭)" if st.session_state.input_option[idx] == 'mic' else "정답을 입력하세요"
                         
+                        # 중요: label_visibility="collapsed"로 정답 툴팁 노출 방지
+                        u_in = st.text_input(
+                            f"input_{idx}", 
+                            key=f"user_in_{idx}", 
+                            placeholder=placeholder_text,
+                            label_visibility="collapsed"
+                        )
+                        
+                        if st.session_state.input_option[idx] == 'mic':
+                            st.caption("💡 **Tip**: 입력창을 클릭한 뒤, **키보드의 마이크 버튼(Win+H 또는 스마트폰 마이크)**을 누르면 훨씬 정확하게 입력됩니다!")
+
                         if u_in:
                             score = get_similarity(u_in, sentence)
                             if score >= 0.9:
                                 st.session_state.show_en[idx] = True
                                 st.balloons(); st.rerun()
                             else:
-                                st.markdown(f"<div class='error-box'>❌ {u_in} (일치율: {int(score*100)}%)</div>", unsafe_allow_html=True)
+                                st.markdown(f"<div class='error-box'>❌ {u_in} (불일치: {int(score*100)}%)</div>", unsafe_allow_html=True)
 
             with c_eye:
                 if st.button("👁️", key=f"eye_{idx}"):
